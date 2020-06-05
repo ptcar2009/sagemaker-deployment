@@ -25,7 +25,15 @@ def model_fn(model_dir):
 
     # Determine the device and construct the model.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = LSTMClassifier(model_info['embedding_dim'], model_info['hidden_dim'], model_info['vocab_size'])
+    model = LSTMClassifier(
+        model_info['embedding_dim'], 
+        model_info['hidden_dim'], 
+        model_info['vocab_size'],
+        model_info['kernel_size'],
+        model_info['conv_channels'],
+        model_info['batch_size'],
+        model_info['padding'],
+    )
 
     # Load the stored model parameters.
     model_path = os.path.join(model_dir, 'model.pth')
@@ -52,7 +60,7 @@ def _get_train_data_loader(batch_size, training_dir):
 
     train_ds = torch.utils.data.TensorDataset(train_X, train_y)
 
-    return torch.utils.data.DataLoader(train_ds, batch_size=batch_size)
+    return torch.utils.data.DataLoader(train_ds, batch_size=batch_size, drop_last=True)
 
 
 def train(model, train_loader, epochs, optimizer, loss_fn, device):
@@ -109,6 +117,15 @@ if __name__ == '__main__':
                         help='size of the hidden dimension (default: 100)')
     parser.add_argument('--vocab_size', type=int, default=5000, metavar='N',
                         help='size of the vocabulary (default: 5000)')
+    
+    parser.add_argument('--kernel_size', type=int, default=3, metavar='N',
+                        help='size of the convolutional kernel (default: 3)')
+    
+    parser.add_argument('--padding', type=int, default=1, metavar='N',
+                        help='size of the convolutional padding (default: 1)')
+    
+    parser.add_argument('--conv_channels', type=int, default=2, metavar='N',
+                        help='number of convolutional channels per sample (default: 2)')
 
     # SageMaker Parameters
     parser.add_argument('--hosts', type=list, default=json.loads(os.environ['SM_HOSTS']))
@@ -128,7 +145,15 @@ if __name__ == '__main__':
     train_loader = _get_train_data_loader(args.batch_size, args.data_dir)
 
     # Build the model.
-    model = LSTMClassifier(args.embedding_dim, args.hidden_dim, args.vocab_size).to(device)
+    model = LSTMClassifier(
+        args.embedding_dim, 
+        args.hidden_dim, 
+        args.vocab_size,
+        args.kernel_size,
+        args.conv_channels,
+        args.batch_size,
+        args.padding,
+    ).to(device)
 
     with open(os.path.join(args.data_dir, "word_dict.pkl"), "rb") as f:
         model.word_dict = pickle.load(f)
@@ -150,6 +175,11 @@ if __name__ == '__main__':
             'embedding_dim': args.embedding_dim,
             'hidden_dim': args.hidden_dim,
             'vocab_size': args.vocab_size,
+            'kernel_size': args.kernel_size,
+            'conv_channels': args.conv_channels,
+            'batch_size': args.batch_size,
+            'padding': args.padding,
+            
         }
         torch.save(model_info, f)
 
