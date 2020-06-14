@@ -1,0 +1,25 @@
+{
+  "files": {
+    "main.css": "/static/css/main.c9b4d355.chunk.css",
+    "main.js": "/static/js/main.89844212.chunk.js",
+    "main.js.map": "/static/js/main.89844212.chunk.js.map",
+    "runtime-main.js": "/static/js/runtime-main.10bc7ff2.js",
+    "runtime-main.js.map": "/static/js/runtime-main.10bc7ff2.js.map",
+    "static/js/2.c3a48dcb.chunk.js": "/static/js/2.c3a48dcb.chunk.js",
+    "static/js/2.c3a48dcb.chunk.js.map": "/static/js/2.c3a48dcb.chunk.js.map",
+    "index.html": "/index.html",
+    "precache-manifest.4bc637025b2715b96bdfe33a813ad7d0.js": "/precache-manifest.4bc637025b2715b96bdfe33a813ad7d0.js",
+    "service-worker.js": "/service-worker.js",
+    "static/css/main.c9b4d355.chunk.css.map": "/static/css/main.c9b4d355.chunk.css.map",
+    "static/js/2.c3a48dcb.chunk.js.LICENSE.txt": "/static/js/2.c3a48dcb.chunk.js.LICENSE.txt",
+    "static/media/index.css": "/static/media/jesus.fdb8eff0.svg",
+    "static/media/bob_ross.jpg": "/static/media/bob_ross.085915d9.jpg",
+    "static/media/gordon.jpg": "/static/media/gordon.5df9effc.jpg"
+  },
+  "entrypoints": [
+    "static/js/runtime-main.10bc7ff2.js",
+    "static/js/2.c3a48dcb.chunk.js",
+    "static/css/main.c9b4d355.chunk.css",
+    "static/js/main.89844212.chunk.js"
+  ]
+}
