@@ -29,10 +29,9 @@ def model_fn(model_dir):
         model_info['embedding_dim'], 
         model_info['hidden_dim'], 
         model_info['vocab_size'],
-        model_info['kernel_size'],
-        model_info['conv_channels'],
-        model_info['batch_size'],
-        model_info['padding'],
+        model_info['n_filters'],
+        model_info['filter_sizes'],
+        model_info['dropout']
     )
 
     # Load the stored model parameters.
@@ -62,7 +61,43 @@ def _get_train_data_loader(batch_size, training_dir):
 
     return torch.utils.data.DataLoader(train_ds, batch_size=batch_size, drop_last=True)
 
+def _get_train_data_loader(batch_size, training_dir):
+    print("Get val data loader.")
 
+    train_data = pd.read_csv(os.path.join(training_dir, "validation.csv"), header=None, names=None)
+
+    train_y = torch.from_numpy(train_data[[0]].values).float().squeeze()
+    train_X = torch.from_numpy(train_data.drop([0], axis=1).values).long()
+
+    train_ds = torch.utils.data.TensorDataset(train_X, train_y)
+
+    return torch.utils.data.DataLoader(train_ds, batch_size=batch_size, drop_last=True)
+
+def binary_accuracy(preds, y):
+    """
+    Returns accuracy per batch, i.e. if you get 8/10 right, this returns 0.8, NOT 8
+    """
+
+    #round predictions to the closest integer
+    rounded_preds = torch.round(torch.sigmoid(preds))
+    correct = (rounded_preds == y).float() #convert into float for division 
+    acc = correct.sum() / len(correct)
+    return acc
+
+def evaluate(model, val_loader):
+    model.eval()
+    
+    total_acc = 0
+    for batch in val_loader:
+        batch_X, batch_y = batch
+            
+        batch_X = batch_X.to(device)
+        batch_y = batch_y.to(device)
+        
+        prevs = model(batch_X).squeeze(1)
+        total_acc += binary_accuracy(prevs, batch_y)
+    print('ACC: {}'.format(total_acc/len(val_loader)))
+    
 def train(model, train_loader, epochs, optimizer, loss_fn, device):
     """
     This is the training method that is called by the PyTorch training script. The parameters
@@ -74,10 +109,10 @@ def train(model, train_loader, epochs, optimizer, loss_fn, device):
     loss_fn      - The loss function used for training.
     device       - Where the model and data should be loaded (gpu or cpu).
     """
-    
     for epoch in range(1, epochs + 1):
         model.train()
         total_loss = 0
+        total_acc = 0
         for batch in train_loader:         
             batch_X, batch_y = batch
             
@@ -85,16 +120,15 @@ def train(model, train_loader, epochs, optimizer, loss_fn, device):
             batch_y = batch_y.to(device)
             
             # TODO: Complete this train method to train the model provided.
-            result = model(batch_X)
+            result = model(batch_X).squeeze(1)
             loss = loss_fn(result, batch_y)
             
+            total_acc += binary_accuracy(result, batch_y)
             loss.backward()
             optimizer.step()
             
             total_loss += loss.data.item()
-        print("Epoch: {}, BCELoss: {}".format(epoch, total_loss / len(train_loader)))
-    pass
-
+        print("Epoch: {}, BCEWithLogitsLoss: {}".format(epoch, total_loss / len(train_loader)))
 
 if __name__ == '__main__':
     # All of the model parameters and training parameters are sent as arguments when the script
@@ -118,20 +152,21 @@ if __name__ == '__main__':
     parser.add_argument('--vocab_size', type=int, default=5000, metavar='N',
                         help='size of the vocabulary (default: 5000)')
     
-    parser.add_argument('--kernel_size', type=int, default=3, metavar='N',
-                        help='size of the convolutional kernel (default: 3)')
+    parser.add_argument('--n_filters', type=int, default=3, metavar='N',
+                        help='number of convolutional kernels (default: 3)')
+    parser.add_argument('--filter_sizes', type=list, default=[3,4,5], nargs='+', 
+                        metavar='size1 size2 ...', 
+                        help='size of the filters of each convolutional filter')
+    parser.add_argument('--dropout', type=float, default=0.5, metavar='D',
+                        help='dropout rate for the model')
     
-    parser.add_argument('--padding', type=int, default=1, metavar='N',
-                        help='size of the convolutional padding (default: 1)')
-    
-    parser.add_argument('--conv_channels', type=int, default=2, metavar='N',
-                        help='number of convolutional channels per sample (default: 2)')
 
     # SageMaker Parameters
     parser.add_argument('--hosts', type=list, default=json.loads(os.environ['SM_HOSTS']))
     parser.add_argument('--current-host', type=str, default=os.environ['SM_CURRENT_HOST'])
     parser.add_argument('--model-dir', type=str, default=os.environ['SM_MODEL_DIR'])
     parser.add_argument('--data-dir', type=str, default=os.environ['SM_CHANNEL_TRAINING'])
+    parser.add_argument('--val-dir', type=str, default=os.environ['SM_CHANNEL_VALIDATION'])
     parser.add_argument('--num-gpus', type=int, default=os.environ['SM_NUM_GPUS'])
 
     args = parser.parse_args()
@@ -143,16 +178,15 @@ if __name__ == '__main__':
 
     # Load the training data.
     train_loader = _get_train_data_loader(args.batch_size, args.data_dir)
-
+    val_loader = _get_train_data_loader(args.batch_size, args.val_dir)
     # Build the model.
     model = LSTMClassifier(
         args.embedding_dim, 
         args.hidden_dim, 
         args.vocab_size,
-        args.kernel_size,
-        args.conv_channels,
-        args.batch_size,
-        args.padding,
+        args.n_filters,
+        args.filter_sizes,
+        args.dropout,
     ).to(device)
 
     with open(os.path.join(args.data_dir, "word_dict.pkl"), "rb") as f:
@@ -164,10 +198,11 @@ if __name__ == '__main__':
 
     # Train the model.
     optimizer = optim.Adam(model.parameters())
-    loss_fn = torch.nn.BCELoss()
+    loss_fn = torch.nn.BCEWithLogitsLoss()
 
     train(model, train_loader, args.epochs, optimizer, loss_fn, device)
-
+    evaluate(model, val_loader)
+    
     # Save the parameters used to construct the model
     model_info_path = os.path.join(args.model_dir, 'model_info.pth')
     with open(model_info_path, 'wb') as f:
@@ -175,11 +210,9 @@ if __name__ == '__main__':
             'embedding_dim': args.embedding_dim,
             'hidden_dim': args.hidden_dim,
             'vocab_size': args.vocab_size,
-            'kernel_size': args.kernel_size,
-            'conv_channels': args.conv_channels,
-            'batch_size': args.batch_size,
-            'padding': args.padding,
-            
+            'n_filters': args.n_filters,
+            'filter_sizes': args.filter_sizes,
+            'dropout': args.dropout
         }
         torch.save(model_info, f)
 

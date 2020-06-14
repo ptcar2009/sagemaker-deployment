@@ -1,23 +1,29 @@
 import torch.nn as nn
+import torch.nn.functional as F
 import torch
-import torchtext
+
 
 class LSTMClassifier(nn.Module):
     """
     This is the simple RNN model we will be using to perform Sentiment Analysis.
     """
 
-    def __init__(self, embedding_dim, hidden_dim, vocab_size, kernel_size = 3, conv_channels = 2, batch_size = 20, padding = 1):
+    def __init__(self, embedding_dim, hidden_dim, vocab_size, n_filters=3, filter_sizes=[3,4,5], dropout=0.5):
         """
         Initialize the model by settingg up the various layers.
         """
         super(LSTMClassifier, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
-        self.conv = nn.Conv1d(embedding_dim, conv_channels, kernel_size, padding=padding) 
+        self.conv = nn.ModuleList([
+            nn.Conv1d(
+                embedding_dim, 
+                n_filters, 
+                fs, 
+            ) for fs in filter_sizes]
+        )
         
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim)
-        self.dense = nn.Linear(in_features=conv_channels*embedding_dim, out_features=1)
-        self.sig = nn.Sigmoid()
+        self.dense = nn.Linear(in_features=len(filter_sizes)*n_filters, out_features=1)
+        self.drop = nn.Dropout(dropout)
         
         self.word_dict = None
 
@@ -28,21 +34,13 @@ class LSTMClassifier(nn.Module):
         x = x.t()
         lengths = x[0,:]
         reviews = x[1:,:]
-        output = None
         embeds = self.embedding(reviews)
-        #for embed in embeds.permute(1,2,0):
-         #   conved = self.conv(embed.unsqueeze(0))
-         #   
-         #   if output == None:
-         ##       output = [conved]
-          #  else:
-           #     output.append(conved)
-        #output = torch.cat(output, dim=0)
-        #output = nn.ReLU()(output.permute(2,0,1))
-        #print(output.size())
-        lstm_out, _ = self.lstm(embeds)
-        out = self.dense(output.squeeze())
-        out = out[lengths - 1, range(len(lengths))]
-        #print(out.squeeze().size())
+        embeds = embeds.permute(1,2,0)
         
-        return self.sig(out.squeeze())
+        conveds = [F.relu(conv(embeds)) for conv in self.conv]  
+        
+        pooled = [F.max_pool1d(conv, conv.shape[2]).squeeze(2) for conv in conveds]
+        
+        cat = self.drop(torch.cat(pooled,dim=1))
+        #print(out.squeeze().size())
+        return self.dense(cat)
